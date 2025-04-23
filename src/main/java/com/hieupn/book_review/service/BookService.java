@@ -67,7 +67,7 @@ public class BookService {
         Author author = authorRepository.findById(authorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Author", "id", authorId));
 
-        // Tạo predicate để tìm kiếm sách theo tác giả
+        // Create predicate to search for books by author
         QBook qBook = QBook.book;
         QBookAuthor qBookAuthor = QBookAuthor.bookAuthor;
 
@@ -104,8 +104,12 @@ public class BookService {
                     case "averageRating":
                         orderSpecifier = order.isAscending() ? qBook.averageRating.asc() : qBook.averageRating.desc();
                         break;
-                    default:
+                    case "createdAt":
                         orderSpecifier = order.isAscending() ? qBook.createdAt.asc() : qBook.createdAt.desc();
+                        break;
+                    default:
+                        // Default sort by publication year descending
+                        orderSpecifier = qBook.publicationYear.desc().nullsLast();
                 }
 
                 if (orderSpecifier != null) {
@@ -125,12 +129,13 @@ public class BookService {
         List<Book> books = query.fetch();
 
         // Get total count
-        Long total = queryFactory
+        JPAQuery<Long> countQuery = queryFactory
                 .select(qBook.countDistinct())
                 .from(qBook)
                 .join(qBookAuthor).on(qBook.eq(qBookAuthor.book))
-                .where(whereClause)
-                .fetchOne();
+                .where(whereClause);
+
+        Long total = countQuery.fetchOne();
 
         if (total == null) {
             total = 0L;

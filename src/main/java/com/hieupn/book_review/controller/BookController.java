@@ -66,29 +66,6 @@ public class BookController {
         return ResponseEntity.ok(book);
     }
 
-    @GetMapping("/by-author")
-    @PreAuthorize("hasAuthority('READ_BOOK_OVERVIEW')")
-    public ResponseEntity<PagedResponse<BookSummaryDTO>> getBooksByAuthor(
-            @RequestParam Long authorId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "12") int size,
-            @RequestParam(defaultValue = "publicationYear") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir) {
-
-        // Create pageable object
-        Pageable pageable = PageRequest.of(page, size, Sort.by(
-                sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC,
-                sortBy));
-
-        // Get books by author
-        Page<BookSummaryDTO> books = bookService.getBooksByAuthor(authorId, pageable);
-
-        // Wrap the Page in our custom PagedResponse
-        PagedResponse<BookSummaryDTO> response = new PagedResponse<>(books);
-
-        return ResponseEntity.ok(response);
-    }
-
     @PostMapping
     @PreAuthorize("hasAuthority('WRITE_BOOK')")
     public ResponseEntity<BookDetailDTO> createBook(@Valid @RequestBody CreateBookRequestDTO createBookRequestDTO) {

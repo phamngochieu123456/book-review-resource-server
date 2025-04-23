@@ -1,5 +1,6 @@
 package com.hieupn.book_review.mapper;
 
+import com.hieupn.book_review.model.dto.AuthorDetailDTO;
 import com.hieupn.book_review.model.dto.AuthorSummaryDTO;
 import com.hieupn.book_review.model.entity.Author;
 import org.mapstruct.*;
@@ -22,6 +23,15 @@ public interface AuthorMapper {
      * @return The corresponding AuthorSummaryDTO
      */
     AuthorSummaryDTO toAuthorSummaryDTO(Author author);
+
+    /**
+     * Convert Author entity to full AuthorDTO
+     *
+     * @param author The Author entity
+     * @return The corresponding AuthorDTO with all details
+     */
+    @Mapping(target = "books", ignore = true) // Books will be loaded separately with pagination
+    AuthorDetailDTO toAuthorDTO(Author author);
 
     /**
      * Convert AuthorDTO to Author entity

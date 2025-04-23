@@ -15,7 +15,7 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class AuthorDTO {
+public class AuthorDetailDTO {
 
     private Long id;
 
