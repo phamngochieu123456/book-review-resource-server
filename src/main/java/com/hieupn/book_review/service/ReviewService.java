@@ -98,12 +98,33 @@ public class ReviewService {
         Optional<Review> existingReview = reviewRepository.findByUserIdAndBookId(userId, createReviewDTO.getBookId());
 
         Review review;
+        BigDecimal newAverageRating;
+        int newReviewCount;
 
         if (existingReview.isPresent()) {
-            // Update existing review instead of creating a new one
+            // Update existing review
             review = existingReview.get();
+
+            // Store old rating for calculation
+            Byte oldRating = review.getRating();
+
+            // Update review fields
             review.setRating(createReviewDTO.getRating());
             review.setComment(createReviewDTO.getComment());
+
+            // Calculate new average rating - update case
+            // No change in review count
+            newReviewCount = book.getReviewCount();
+
+            if (newReviewCount > 0) {
+                // Formula: newAverage = currentAverage + (newRating - oldRating) / reviewCount
+                BigDecimal ratingDifference = new BigDecimal(createReviewDTO.getRating() - oldRating);
+                BigDecimal adjustmentPerReview = ratingDifference.divide(new BigDecimal(newReviewCount), 10, RoundingMode.HALF_UP);
+                newAverageRating = book.getAverageRating().add(adjustmentPerReview);
+            } else {
+                // Edge case: should not happen but handle it gracefully
+                newAverageRating = new BigDecimal(createReviewDTO.getRating());
+            }
         } else {
             // Create new review
             review = Review.builder()
@@ -112,12 +133,35 @@ public class ReviewService {
                     .rating(createReviewDTO.getRating())
                     .comment(createReviewDTO.getComment())
                     .build();
+
+            // Calculate new review count
+            newReviewCount = book.getReviewCount() + 1;
+
+            // Calculate new average rating - create case
+            if (newReviewCount > 1) {
+                // Formula: newAverage = (currentAverage * oldCount / newCount) + (newRating / newCount)
+                BigDecimal oldWeight = book.getAverageRating()
+                        .multiply(new BigDecimal(newReviewCount - 1))
+                        .divide(new BigDecimal(newReviewCount), 10, RoundingMode.HALF_UP);
+
+                BigDecimal newRatingContribution = new BigDecimal(createReviewDTO.getRating())
+                        .divide(new BigDecimal(newReviewCount), 10, RoundingMode.HALF_UP);
+
+                newAverageRating = oldWeight.add(newRatingContribution);
+            } else {
+                // First review case
+                newAverageRating = new BigDecimal(createReviewDTO.getRating());
+            }
         }
 
+        // Save review
         Review savedReview = reviewRepository.save(review);
 
-        // Update book's average rating and review count
-        updateBookRatingStatistics(book.getId());
+        // Update book's statistics with our efficiently calculated values
+        // Round to 2 decimal places for storage
+        book.setAverageRating(newAverageRating.setScale(2, RoundingMode.HALF_UP));
+        book.setReviewCount(newReviewCount);
+        bookRepository.save(book);
 
         return reviewMapper.toReviewDTO(savedReview);
     }
@@ -142,14 +186,35 @@ public class ReviewService {
             throw new IllegalArgumentException("You can only update your own reviews");
         }
 
+        // Store old rating for calculation
+        Byte oldRating = review.getRating();
+
         // Update review fields
         review.setRating(updateReviewDTO.getRating());
         review.setComment(updateReviewDTO.getComment());
 
         Review updatedReview = reviewRepository.save(review);
 
-        // Update book's average rating
-        updateBookRatingStatistics(review.getBook().getId());
+        // Get the book
+        Book book = review.getBook();
+
+        // Calculate new average rating for update case
+        BigDecimal newAverageRating;
+        int reviewCount = book.getReviewCount();
+
+        if (reviewCount > 0) {
+            // Formula: newAverage = currentAverage + (newRating - oldRating) / reviewCount
+            BigDecimal ratingDifference = new BigDecimal(updateReviewDTO.getRating() - oldRating);
+            BigDecimal adjustmentPerReview = ratingDifference.divide(new BigDecimal(reviewCount), 10, RoundingMode.HALF_UP);
+            newAverageRating = book.getAverageRating().add(adjustmentPerReview);
+        } else {
+            // Edge case: should not happen but handle it gracefully
+            newAverageRating = new BigDecimal(updateReviewDTO.getRating());
+        }
+
+        // Update book's statistics
+        book.setAverageRating(newAverageRating.setScale(2, RoundingMode.HALF_UP));
+        bookRepository.save(book);
 
         return reviewMapper.toReviewDTO(updatedReview);
     }
@@ -173,13 +238,37 @@ public class ReviewService {
             throw new IllegalArgumentException("You can only delete your own reviews");
         }
 
-        Long bookId = review.getBook().getId();
+        // Get review data before deletion
+        Byte oldRating = review.getRating();
+        Book book = review.getBook();
+        int reviewCount = book.getReviewCount();
 
         // Delete the review
         reviewRepository.deleteById(reviewId);
 
-        // Update book's average rating and review count
-        updateBookRatingStatistics(bookId);
+        // Calculate new review count
+        int newReviewCount = reviewCount - 1;
+
+        // Calculate new average rating
+        BigDecimal newAverageRating;
+
+        if (newReviewCount > 0) {
+            // Formula: newAverage = (currentAverage * oldCount - deletedRating) / newCount
+            BigDecimal totalRatingPoints = book.getAverageRating()
+                    .multiply(new BigDecimal(reviewCount));
+
+            BigDecimal adjustedTotalPoints = totalRatingPoints.subtract(new BigDecimal(oldRating));
+
+            newAverageRating = adjustedTotalPoints.divide(new BigDecimal(newReviewCount), 2, RoundingMode.HALF_UP);
+        } else {
+            // No reviews left
+            newAverageRating = BigDecimal.ZERO;
+        }
+
+        // Update book's statistics
+        book.setAverageRating(newAverageRating);
+        book.setReviewCount(newReviewCount);
+        bookRepository.save(book);
     }
 
     /**
