@@ -1,5 +1,6 @@
 package com.hieupn.book_review.controller;
 
+import com.hieupn.book_review.exception.UnauthorizedException;
 import com.hieupn.book_review.model.dto.BookDetailDTO;
 import com.hieupn.book_review.model.dto.BookSummaryDTO;
 import com.hieupn.book_review.model.dto.CreateBookRequestDTO;
@@ -13,14 +14,15 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
 
-/**
- * REST controller for book-related operations
- */
 @RestController
 @RequestMapping("/api/v1/books")
 @RequiredArgsConstructor
@@ -28,27 +30,16 @@ public class BookController {
 
     private final BookService bookService;
 
-    /**
-     * Get all books with optional filtering, pagination, and sorting
-     *
-     * @param page Page number (zero-based)
-     * @param size Items per page
-     * @param sortBy Field to sort by (title, averageRating, publicationYear, createdAt)
-     * @param sortDir Sort direction (asc or desc)
-     * @param categoryId Optional category ID to filter by
-     * @param authorId Optional author ID to filter by
-     * @param searchTerm Optional search term to filter title or description
-     * @return PagedResponse of BookSummaryDTO objects
-     */
     @GetMapping
+    @PreAuthorize("hasAuthority('READ_BOOK_OVERVIEW')")
     public ResponseEntity<PagedResponse<BookSummaryDTO>> getAllBooks(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
             @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) Long authorId,
-            @RequestParam(required = false) String searchTerm) {
+            @RequestParam(required = false) String searchTerm,
+            @RequestParam(required = false) Long authorId) {
 
         // Validate sortBy parameter
         if (!isValidSortField(sortBy)) {
@@ -68,28 +59,50 @@ public class BookController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Get a book by its ID
-     *
-     * @param id The book ID
-     * @return BookDetailDTO for the book
-     */
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('READ_BOOK_INFO')")
     public ResponseEntity<BookDetailDTO> getBookById(@PathVariable Long id) {
         BookDetailDTO book = bookService.getBookById(id);
         return ResponseEntity.ok(book);
     }
 
-    /**
-     * Create a new book
-     *
-     * @param createBookRequestDTO DTO containing book information
-     * @return BookDetailDTO for the created book
-     */
+    @GetMapping("/by-author")
+    @PreAuthorize("hasAuthority('READ_BOOK_OVERVIEW')")
+    public ResponseEntity<PagedResponse<BookSummaryDTO>> getBooksByAuthor(
+            @RequestParam Long authorId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "12") int size,
+            @RequestParam(defaultValue = "publicationYear") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+
+        // Create pageable object
+        Pageable pageable = PageRequest.of(page, size, Sort.by(
+                sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC,
+                sortBy));
+
+        // Get books by author
+        Page<BookSummaryDTO> books = bookService.getBooksByAuthor(authorId, pageable);
+
+        // Wrap the Page in our custom PagedResponse
+        PagedResponse<BookSummaryDTO> response = new PagedResponse<>(books);
+
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping
+    @PreAuthorize("hasAuthority('WRITE_BOOK')")
     public ResponseEntity<BookDetailDTO> createBook(@Valid @RequestBody CreateBookRequestDTO createBookRequestDTO) {
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         BookDetailDTO createdBook = bookService.createBook(createBookRequestDTO, currentUserId);
 
@@ -103,44 +116,36 @@ public class BookController {
         return ResponseEntity.created(location).body(createdBook);
     }
 
-    /**
-     * Update an existing book
-     *
-     * @param id The book ID
-     * @param updateBookRequestDTO DTO containing updated book information
-     * @return BookDetailDTO for the updated book
-     */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('WRITE_BOOK')")
     public ResponseEntity<BookDetailDTO> updateBook(
             @PathVariable Long id,
             @Valid @RequestBody UpdateBookRequestDTO updateBookRequestDTO) {
 
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         BookDetailDTO updatedBook = bookService.updateBook(id, updateBookRequestDTO, currentUserId);
 
         return ResponseEntity.ok(updatedBook);
     }
 
-    /**
-     * Soft delete a book
-     *
-     * @param id The book ID
-     * @return No content response
-     */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('DELETE_BOOK')")
     public ResponseEntity<Void> deleteBook(@PathVariable Long id) {
         bookService.deleteBook(id);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Check if the sort field is valid
-     *
-     * @param field The field to check
-     * @return true if valid, false otherwise
-     */
     private boolean isValidSortField(String field) {
         return field.equals("title") ||
                 field.equals("averageRating") ||

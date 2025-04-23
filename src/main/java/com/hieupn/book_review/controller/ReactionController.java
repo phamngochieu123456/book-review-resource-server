@@ -1,5 +1,6 @@
 package com.hieupn.book_review.controller;
 
+import com.hieupn.book_review.exception.UnauthorizedException;
 import com.hieupn.book_review.model.dto.CreateReactionDTO;
 import com.hieupn.book_review.model.dto.ReactionDTO;
 import com.hieupn.book_review.model.dto.ReactionSummaryDTO;
@@ -7,14 +8,15 @@ import com.hieupn.book_review.service.ReactionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * REST controller for reaction-related operations
- */
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
@@ -22,16 +24,20 @@ public class ReactionController {
 
     private final ReactionService reactionService;
 
-    /**
-     * Toggle a reaction (add if not exists, remove if exists with same type, update if exists with different type)
-     *
-     * @param createReactionDTO Reaction data
-     * @return Response indicating whether the reaction was added/updated or removed
-     */
     @PostMapping("/reactions")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Map<String, Object>> toggleReaction(@Valid @RequestBody CreateReactionDTO createReactionDTO) {
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         boolean added = reactionService.toggleReaction(createReactionDTO, currentUserId);
 
@@ -49,13 +55,6 @@ public class ReactionController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Get reaction summary for a specific item
-     *
-     * @param reactableType Type of the item being reacted to (e.g., "comment")
-     * @param reactableId   ID of the item being reacted to
-     * @return ReactionSummaryDTO with counts by type
-     */
     @GetMapping("/reactions/{reactableType}/{reactableId}")
     public ResponseEntity<ReactionSummaryDTO> getReactionSummary(
             @PathVariable String reactableType,
@@ -65,20 +64,23 @@ public class ReactionController {
         return ResponseEntity.ok(summary);
     }
 
-    /**
-     * Get current user's reaction for a specific item
-     *
-     * @param reactableType Type of the item being reacted to (e.g., "comment")
-     * @param reactableId   ID of the item being reacted to
-     * @return ReactionDTO or 404 if no reaction exists
-     */
     @GetMapping("/reactions/{reactableType}/{reactableId}/my-reaction")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ReactionDTO> getCurrentUserReaction(
             @PathVariable String reactableType,
             @PathVariable Long reactableId) {
 
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         ReactionDTO reaction = reactionService.getUserReaction(reactableId, reactableType, currentUserId);
 

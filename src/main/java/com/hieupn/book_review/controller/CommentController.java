@@ -1,5 +1,6 @@
 package com.hieupn.book_review.controller;
 
+import com.hieupn.book_review.exception.UnauthorizedException;
 import com.hieupn.book_review.model.dto.CommentDTO;
 import com.hieupn.book_review.model.dto.CreateCommentDTO;
 import com.hieupn.book_review.model.dto.UpdateCommentDTO;
@@ -12,15 +13,16 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
 import java.util.List;
 
-/**
- * REST controller for comment-related operations
- */
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
@@ -28,17 +30,8 @@ public class CommentController {
 
     private final CommentService commentService;
 
-    /**
-     * Get top-level comments for a book
-     *
-     * @param bookId   Book ID
-     * @param page     Page number (zero-based)
-     * @param size     Items per page
-     * @param sortBy   Field to sort by (createdAt)
-     * @param sortDir  Sort direction (asc or desc)
-     * @return PagedResponse of CommentDTOs
-     */
     @GetMapping("/books/{bookId}/comments")
+    @PreAuthorize("hasAuthority('READ_COMMENT')")
     public ResponseEntity<PagedResponse<CommentDTO>> getBookComments(
             @PathVariable Long bookId,
             @RequestParam(defaultValue = "0") int page,
@@ -59,40 +52,34 @@ public class CommentController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Get child comments (replies) for a parent comment
-     *
-     * @param parentCommentId Parent comment ID
-     * @return List of CommentDTOs
-     */
     @GetMapping("/comments/{parentCommentId}/replies")
+    @PreAuthorize("hasAuthority('READ_COMMENT')")
     public ResponseEntity<List<CommentDTO>> getCommentReplies(@PathVariable Long parentCommentId) {
         List<CommentDTO> replies = commentService.getChildComments(parentCommentId);
         return ResponseEntity.ok(replies);
     }
 
-    /**
-     * Get a comment by its ID
-     *
-     * @param commentId Comment ID
-     * @return CommentDTO
-     */
     @GetMapping("/comments/{commentId}")
+    @PreAuthorize("hasAuthority('READ_COMMENT')")
     public ResponseEntity<CommentDTO> getCommentById(@PathVariable Long commentId) {
         CommentDTO comment = commentService.getCommentById(commentId);
         return ResponseEntity.ok(comment);
     }
 
-    /**
-     * Create a new comment
-     *
-     * @param createCommentDTO Comment creation data
-     * @return CommentDTO for the created comment
-     */
     @PostMapping("/comments")
+    @PreAuthorize("hasAuthority('WRITE_COMMENT')")
     public ResponseEntity<CommentDTO> createComment(@Valid @RequestBody CreateCommentDTO createCommentDTO) {
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         CommentDTO createdComment = commentService.createComment(createCommentDTO, currentUserId);
 
@@ -106,68 +93,76 @@ public class CommentController {
         return ResponseEntity.created(location).body(createdComment);
     }
 
-    /**
-     * Update an existing comment
-     *
-     * @param commentId        Comment ID
-     * @param updateCommentDTO Comment update data
-     * @return CommentDTO for the updated comment
-     */
     @PutMapping("/comments/{commentId}")
+    @PreAuthorize("hasAuthority('WRITE_COMMENT')")
     public ResponseEntity<CommentDTO> updateComment(
             @PathVariable Long commentId,
             @Valid @RequestBody UpdateCommentDTO updateCommentDTO) {
 
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         CommentDTO updatedComment = commentService.updateComment(commentId, updateCommentDTO, currentUserId);
 
         return ResponseEntity.ok(updatedComment);
     }
 
-    /**
-     * Soft delete a comment (mark as deleted)
-     *
-     * @param commentId Comment ID
-     * @return No content response
-     */
     @DeleteMapping("/comments/{commentId}")
+    @PreAuthorize("hasAuthority('WRITE_COMMENT')")
     public ResponseEntity<Void> softDeleteComment(@PathVariable Long commentId) {
-        // TODO: Get current user ID and roles from security context
-        Integer currentUserId = 1; // For demonstration purposes
-        boolean isAdmin = false; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
+
+        boolean isAdmin = authentication.getAuthorities()
+                .stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
 
         commentService.softDeleteComment(commentId, currentUserId, isAdmin);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Admin: Soft delete any comment
-     *
-     * @param commentId Comment ID
-     * @return No content response
-     */
     @DeleteMapping("/admin/comments/{commentId}/hide")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> adminSoftDeleteComment(@PathVariable Long commentId) {
-        // TODO: Get current user ID from security context and check if admin
-        Integer currentUserId = 1; // For demonstration purposes
-        boolean isAdmin = true; // Admin role is required for this endpoint
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
+
+        boolean isAdmin = true;
 
         commentService.softDeleteComment(commentId, currentUserId, isAdmin);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Admin: Hard delete a comment (permanent deletion)
-     *
-     * @param commentId Comment ID
-     * @return No content response
-     */
     @DeleteMapping("/admin/comments/{commentId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> adminHardDeleteComment(@PathVariable Long commentId) {
-        // TODO: Check if admin role is present
-
         commentService.hardDeleteComment(commentId);
         return ResponseEntity.noContent().build();
     }

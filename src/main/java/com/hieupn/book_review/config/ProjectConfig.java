@@ -30,7 +30,7 @@ public class ProjectConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
                 .authorizeHttpRequests(authorize -> authorize
-                        // Định nghĩa các quy tắc authorization dựa trên URL pattern
+                        // Define authorization rules based on URL pattern
                         .requestMatchers("/api/v1/public/**").permitAll()
                         .anyRequest().authenticated()
                 )

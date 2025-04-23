@@ -16,8 +16,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Chuyển đổi JWT thành Authentication có chứa đầy đủ các GrantedAuthorities
- * từ claims roles và permissions trong JWT token
+ * Converts JWT to Authentication containing all GrantedAuthorities
+ * from roles and permissions claims in the JWT token
  */
 @Component
 public class JwtRolePermissionConverter implements Converter<Jwt, AbstractAuthenticationToken> {
@@ -35,7 +35,7 @@ public class JwtRolePermissionConverter implements Converter<Jwt, AbstractAuthen
         Map<String, Object> claims = jwt.getClaims();
         Collection<GrantedAuthority> authorities = new HashSet<>();
 
-        // Xử lý claim roles - thêm prefix ROLE_
+        // Process roles claim - add ROLE_ prefix
         if (claims.containsKey("roles")) {
             Collection<String> roles = getClaimAsCollection(claims, "roles");
             Collection<GrantedAuthority> roleAuthorities = roles.stream()
@@ -44,7 +44,7 @@ public class JwtRolePermissionConverter implements Converter<Jwt, AbstractAuthen
             authorities.addAll(roleAuthorities);
         }
 
-        // Xử lý claim permissions
+        // Process permissions claim
         if (claims.containsKey("permissions")) {
             Collection<String> permissions = getClaimAsCollection(claims, "permissions");
             Collection<GrantedAuthority> permissionAuthorities = permissions.stream()
@@ -53,7 +53,7 @@ public class JwtRolePermissionConverter implements Converter<Jwt, AbstractAuthen
             authorities.addAll(permissionAuthorities);
         }
 
-        // Kết hợp với các authorities mặc định (scope)
+        // Combine with default authorities (scope)
         authorities.addAll(defaultConverter.convert(jwt));
 
         return authorities;

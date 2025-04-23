@@ -9,20 +9,25 @@ import com.hieupn.book_review.model.dto.CreateBookRequestDTO;
 import com.hieupn.book_review.model.dto.UpdateBookRequestDTO;
 import com.hieupn.book_review.model.entity.*;
 import com.hieupn.book_review.repository.*;
+import com.querydsl.core.BooleanBuilder;
+import com.querydsl.core.types.OrderSpecifier;
+import com.querydsl.jpa.impl.JPAQuery;
+import com.querydsl.jpa.impl.JPAQueryFactory;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
-/**
- * Service class for book-related operations
- */
 @Service
 @RequiredArgsConstructor
 public class BookService {
@@ -34,27 +39,14 @@ public class BookService {
     private final BookAuthorRepository bookAuthorRepository;
     private final BookMapper bookMapper;
 
-    /**
-     * Get all non-deleted books with optional filtering
-     *
-     * @param categoryId Optional category ID to filter by
-     * @param authorId Optional author ID to filter by
-     * @param searchTerm Optional search term to filter title or description
-     * @param pageable Pagination and sorting information
-     * @return Page of BookSummaryDTO objects
-     */
+    @PersistenceContext
+    private EntityManager entityManager;
+
     public Page<BookSummaryDTO> getAllBooks(Long categoryId, Long authorId, String searchTerm, Pageable pageable) {
         Page<Book> books = bookRepository.findAllNonDeletedBooks(categoryId, authorId, searchTerm, pageable);
         return books.map(bookMapper::toBookSummaryDTO);
     }
 
-    /**
-     * Get a book by its ID
-     *
-     * @param id The book ID
-     * @return BookDetailDTO for the book
-     * @throws ResourceNotFoundException if the book is not found or is deleted
-     */
     public BookDetailDTO getBookById(Long id) {
         Book book = bookRepository.findByIdAndIsDeletedFalse(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Book", "id", id));
@@ -63,14 +55,95 @@ public class BookService {
     }
 
     /**
-     * Create a new book
+     * Get books by author
      *
-     * @param createBookRequestDTO DTO containing book information
-     * @param currentUserId ID of the user creating the book (for tracking who assigned categories)
-     * @return BookDetailDTO for the created book
-     * @throws ResourceNotFoundException if author or category is not found
-     * @throws DuplicateResourceException if ISBN already exists
+     * @param authorId The author ID
+     * @param pageable Pagination information
+     * @return Page of BookSummaryDTO objects
+     * @throws ResourceNotFoundException if author not found
      */
+    public Page<BookSummaryDTO> getBooksByAuthor(Long authorId, Pageable pageable) {
+        // Check if author exists
+        Author author = authorRepository.findById(authorId)
+                .orElseThrow(() -> new ResourceNotFoundException("Author", "id", authorId));
+
+        // Tạo predicate để tìm kiếm sách theo tác giả
+        QBook qBook = QBook.book;
+        QBookAuthor qBookAuthor = QBookAuthor.bookAuthor;
+
+        BooleanBuilder whereClause = new BooleanBuilder();
+        whereClause.and(qBook.isDeleted.eq(false));
+        whereClause.and(qBookAuthor.author.id.eq(authorId));
+
+        // Create query
+        JPAQueryFactory queryFactory = new JPAQueryFactory(entityManager);
+        JPAQuery<Book> query = queryFactory
+                .selectFrom(qBook)
+                .join(qBookAuthor).on(qBook.eq(qBookAuthor.book))
+                .where(whereClause)
+                .distinct();
+
+        // Apply pagination
+        query.offset(pageable.getOffset())
+                .limit(pageable.getPageSize());
+
+        // Apply sorting
+        if (pageable.getSort().isSorted()) {
+            List<OrderSpecifier<?>> orderSpecifiers = new ArrayList<>();
+
+            pageable.getSort().forEach(order -> {
+                OrderSpecifier<?> orderSpecifier = null;
+
+                switch (order.getProperty()) {
+                    case "title":
+                        orderSpecifier = order.isAscending() ? qBook.title.asc() : qBook.title.desc();
+                        break;
+                    case "publicationYear":
+                        orderSpecifier = order.isAscending() ? qBook.publicationYear.asc() : qBook.publicationYear.desc();
+                        break;
+                    case "averageRating":
+                        orderSpecifier = order.isAscending() ? qBook.averageRating.asc() : qBook.averageRating.desc();
+                        break;
+                    default:
+                        orderSpecifier = order.isAscending() ? qBook.createdAt.asc() : qBook.createdAt.desc();
+                }
+
+                if (orderSpecifier != null) {
+                    orderSpecifiers.add(orderSpecifier);
+                }
+            });
+
+            if (!orderSpecifiers.isEmpty()) {
+                query.orderBy(orderSpecifiers.toArray(new OrderSpecifier[0]));
+            }
+        } else {
+            // Default sort by publication year (newest first)
+            query.orderBy(qBook.publicationYear.desc().nullsLast());
+        }
+
+        // Execute query
+        List<Book> books = query.fetch();
+
+        // Get total count
+        Long total = queryFactory
+                .select(qBook.countDistinct())
+                .from(qBook)
+                .join(qBookAuthor).on(qBook.eq(qBookAuthor.book))
+                .where(whereClause)
+                .fetchOne();
+
+        if (total == null) {
+            total = 0L;
+        }
+
+        // Map to DTOs
+        List<BookSummaryDTO> bookDTOs = books.stream()
+                .map(bookMapper::toBookSummaryDTO)
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(bookDTOs, pageable, total);
+    }
+
     @Transactional
     public BookDetailDTO createBook(CreateBookRequestDTO createBookRequestDTO, Integer currentUserId) {
         // Check if ISBN already exists
@@ -88,6 +161,7 @@ public class BookService {
                 .isbn(createBookRequestDTO.getIsbn())
                 .coverImageUrl(createBookRequestDTO.getCoverImageUrl())
                 .publicationYear(createBookRequestDTO.getPublicationYear())
+                .isDeleted(false)
                 .build();
 
         // Save book to get an ID
@@ -105,16 +179,6 @@ public class BookService {
         return bookMapper.toBookDetailDTO(book);
     }
 
-    /**
-     * Update an existing book
-     *
-     * @param id The book ID
-     * @param updateBookRequestDTO DTO containing updated book information
-     * @param currentUserId ID of the user updating the book (for tracking who assigned categories)
-     * @return BookDetailDTO for the updated book
-     * @throws ResourceNotFoundException if book, author, or category is not found
-     * @throws DuplicateResourceException if new ISBN conflicts with another book
-     */
     @Transactional
     public BookDetailDTO updateBook(Long id, UpdateBookRequestDTO updateBookRequestDTO, Integer currentUserId) {
         // Find the book
@@ -164,12 +228,6 @@ public class BookService {
         return bookMapper.toBookDetailDTO(book);
     }
 
-    /**
-     * Soft delete a book
-     *
-     * @param id The book ID
-     * @throws ResourceNotFoundException if the book is not found or already deleted
-     */
     @Transactional
     public void deleteBook(Long id) {
         Book book = bookRepository.findByIdAndIsDeletedFalse(id)
@@ -179,14 +237,6 @@ public class BookService {
         bookRepository.save(book);
     }
 
-    /**
-     * Associate categories with a book
-     *
-     * @param book The book
-     * @param categoryIds List of category IDs
-     * @param assignedBy ID of the user assigning categories
-     * @throws ResourceNotFoundException if a category is not found
-     */
     private void associateCategoriesWithBook(Book book, List<Long> categoryIds, Integer assignedBy) {
         List<BookCategory> bookCategories = new ArrayList<>();
 
@@ -201,14 +251,6 @@ public class BookService {
         bookCategoryRepository.saveAll(bookCategories);
     }
 
-    /**
-     * Associate authors with a book
-     *
-     * @param book The book
-     * @param authorIds List of author IDs
-     * @param assignedBy ID of the user assigning authors
-     * @throws ResourceNotFoundException if an author is not found
-     */
     private void associateAuthorsWithBook(Book book, List<Long> authorIds, Integer assignedBy) {
         List<BookAuthor> bookAuthors = new ArrayList<>();
 

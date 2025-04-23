@@ -3,7 +3,6 @@ package com.hieupn.book_review.repository;
 import com.hieupn.book_review.model.entity.Book;
 import com.hieupn.book_review.model.entity.BookCounts;
 import com.hieupn.book_review.model.entity.QBook;
-import com.hieupn.book_review.model.entity.QBookAuthor;
 import com.hieupn.book_review.model.entity.QBookCategory;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.OrderSpecifier;
@@ -35,13 +34,12 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
         JPAQueryFactory queryFactory = new JPAQueryFactory(entityManager);
         QBook qBook = QBook.book;
         QBookCategory qBookCategory = QBookCategory.bookCategory;
-        QBookAuthor qBookAuthor = QBookAuthor.bookAuthor;
 
         // Build common where conditions
         BooleanBuilder whereClause = new BooleanBuilder();
         whereClause.and(qBook.isDeleted.eq(false));
 
-        // Apply author and category filters to where clause if provided
+        // Apply filters to where clause if provided
         boolean hasFilters = false;
 
         // Add title search condition using LIKE if searchTerm is provided
@@ -51,11 +49,7 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
             hasFilters = true;
         }
 
-        if (authorId != null) {
-            whereClause.and(qBookAuthor.id.authorId.eq(authorId));
-            hasFilters = true;
-        }
-
+        // Apply category filter if provided
         if (categoryId != null) {
             whereClause.and(qBookCategory.category.id.eq(categoryId));
             hasFilters = true;
@@ -71,15 +65,13 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
             if (bookCountOpt.isPresent()) {
                 total = bookCountOpt.get().getCurrentCount();
             } else {
-                JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookAuthor, qBookCategory,
-                        authorId, categoryId, whereClause);
+                JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookCategory, categoryId, whereClause);
                 Long countResult = countQuery.fetchOne(); // fetchOne() returns null if no results
                 total = (countResult != null) ? countResult : 0L;
             }
         } else {
             // --- Count Query for filtered results: ---
-            JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookAuthor, qBookCategory,
-                    authorId, categoryId, whereClause);
+            JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookCategory, categoryId, whereClause);
             total = countQuery.fetchCount();
         }
 
@@ -90,8 +82,6 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
                 .distinct()
                 // Fetch join for bookCategories
                 .leftJoin(qBookCategory).on(qBook.eq(qBookCategory.book)).fetchJoin()
-                // Fetch join for bookAuthors
-                .leftJoin(qBookAuthor).on(qBook.eq(qBookAuthor.book)).fetchJoin()
                 .where(whereClause);
 
         // Apply sorting based on pageable
@@ -110,17 +100,13 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
      * Creates a count query with the appropriate joins and conditions
      */
     private JPAQuery<Long> createCountQuery(JPAQueryFactory queryFactory, QBook qBook,
-                                            QBookAuthor qBookAuthor, QBookCategory qBookCategory,
-                                            Long authorId, Long categoryId, BooleanBuilder whereClause) {
+                                            QBookCategory qBookCategory,
+                                            Long categoryId, BooleanBuilder whereClause) {
         // Create count query - no fetch join needed
         JPAQuery<Long> countQuery = queryFactory.select(qBook.id)
                 .from(qBook);
 
         // Apply joins for filters if needed
-        if (authorId != null) {
-            countQuery.join(qBookAuthor).on(qBook.eq(qBookAuthor.book)
-                    .and(qBookAuthor.id.authorId.eq(authorId)));
-        }
         if (categoryId != null) {
             countQuery.join(qBookCategory).on(qBook.eq(qBookCategory.book)
                     .and(qBookCategory.category.id.eq(categoryId)));

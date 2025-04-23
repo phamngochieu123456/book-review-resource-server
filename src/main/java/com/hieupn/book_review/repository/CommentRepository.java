@@ -11,12 +11,12 @@ import java.util.List;
 
 @Repository
 public interface CommentRepository extends JpaRepository<Comment, Long>, QuerydslPredicateExecutor<Comment> {
-    // Tìm tất cả bình luận của một cuốn sách
+    // Find all comments for a book
     Page<Comment> findByBookIdAndIsDeletedFalse(Long bookId, Pageable pageable);
 
-    // Tìm tất cả bình luận trả lời của một bình luận
+    // Find all replies to a comment
     List<Comment> findByParentCommentIdAndIsDeletedFalse(Long parentCommentId);
 
-    // Tìm bình luận gốc (không có parent) của một cuốn sách
+    // Find root comments (without parent) for a book
     Page<Comment> findByBookIdAndParentCommentIsNullAndIsDeletedFalse(Long bookId, Pageable pageable);
 }

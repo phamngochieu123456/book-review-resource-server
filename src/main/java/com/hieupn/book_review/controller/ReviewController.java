@@ -1,5 +1,6 @@
 package com.hieupn.book_review.controller;
 
+import com.hieupn.book_review.exception.UnauthorizedException;
 import com.hieupn.book_review.model.dto.CreateReviewDTO;
 import com.hieupn.book_review.model.dto.ReviewDTO;
 import com.hieupn.book_review.model.dto.UpdateReviewDTO;
@@ -12,14 +13,15 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
 
-/**
- * REST controller for review-related operations
- */
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
@@ -27,17 +29,8 @@ public class ReviewController {
 
     private final ReviewService reviewService;
 
-    /**
-     * Get all reviews for a book
-     *
-     * @param bookId   Book ID
-     * @param page     Page number (zero-based)
-     * @param size     Items per page
-     * @param sortBy   Field to sort by (createdAt, rating)
-     * @param sortDir  Sort direction (asc or desc)
-     * @return PagedResponse of ReviewDTOs
-     */
     @GetMapping("/books/{bookId}/reviews")
+    @PreAuthorize("hasAuthority('READ_REVIEW')")
     public ResponseEntity<PagedResponse<ReviewDTO>> getBookReviews(
             @PathVariable Long bookId,
             @RequestParam(defaultValue = "0") int page,
@@ -63,16 +56,20 @@ public class ReviewController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Get current user's review for a book
-     *
-     * @param bookId Book ID
-     * @return ReviewDTO or 404 if no review exists
-     */
     @GetMapping("/books/{bookId}/my-review")
+    @PreAuthorize("hasAuthority('READ_REVIEW')")
     public ResponseEntity<ReviewDTO> getCurrentUserReviewForBook(@PathVariable Long bookId) {
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         ReviewDTO review = reviewService.getUserReviewForBook(currentUserId, bookId);
 
@@ -83,17 +80,8 @@ public class ReviewController {
         return ResponseEntity.ok(review);
     }
 
-    /**
-     * Get all reviews by a user
-     *
-     * @param userId   User ID
-     * @param page     Page number (zero-based)
-     * @param size     Items per page
-     * @param sortBy   Field to sort by (createdAt, rating)
-     * @param sortDir  Sort direction (asc or desc)
-     * @return PagedResponse of ReviewDTOs
-     */
     @GetMapping("/users/{userId}/reviews")
+    @PreAuthorize("hasAuthority('READ_REVIEW')")
     public ResponseEntity<PagedResponse<ReviewDTO>> getUserReviews(
             @PathVariable Integer userId,
             @RequestParam(defaultValue = "0") int page,
@@ -119,29 +107,27 @@ public class ReviewController {
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Get a review by its ID
-     *
-     * @param reviewId Review ID
-     * @return ReviewDTO
-     */
     @GetMapping("/reviews/{reviewId}")
+    @PreAuthorize("hasAuthority('READ_REVIEW')")
     public ResponseEntity<ReviewDTO> getReviewById(@PathVariable Long reviewId) {
         ReviewDTO review = reviewService.getReviewById(reviewId);
         return ResponseEntity.ok(review);
     }
 
-    /**
-     * Create or update a review
-     * If the user already has a review for this book, it will be updated
-     *
-     * @param createReviewDTO Review creation data
-     * @return ReviewDTO for the created/updated review
-     */
     @PostMapping("/reviews")
+    @PreAuthorize("hasAuthority('WRITE_REVIEW')")
     public ResponseEntity<ReviewDTO> createOrUpdateReview(@Valid @RequestBody CreateReviewDTO createReviewDTO) {
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         ReviewDTO createdReview = reviewService.createReview(createReviewDTO, currentUserId);
 
@@ -163,64 +149,73 @@ public class ReviewController {
         }
     }
 
-    /**
-     * Update an existing review
-     *
-     * @param reviewId       Review ID
-     * @param updateReviewDTO Review update data
-     * @return ReviewDTO for the updated review
-     */
     @PutMapping("/reviews/{reviewId}")
+    @PreAuthorize("hasAuthority('WRITE_REVIEW')")
     public ResponseEntity<ReviewDTO> updateReview(
             @PathVariable Long reviewId,
             @Valid @RequestBody UpdateReviewDTO updateReviewDTO) {
 
-        // TODO: Get current user ID from security context
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
 
         ReviewDTO updatedReview = reviewService.updateReview(reviewId, updateReviewDTO, currentUserId);
 
         return ResponseEntity.ok(updatedReview);
     }
 
-    /**
-     * Delete a review
-     *
-     * @param reviewId Review ID
-     * @return No content response
-     */
     @DeleteMapping("/reviews/{reviewId}")
+    @PreAuthorize("hasAuthority('WRITE_REVIEW')")
     public ResponseEntity<Void> deleteReview(@PathVariable Long reviewId) {
-        // TODO: Get current user ID and roles from security context
-        Integer currentUserId = 1; // For demonstration purposes
-        boolean isAdmin = false; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
+
+        boolean isAdmin = authentication.getAuthorities()
+                .stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
 
         reviewService.deleteReview(reviewId, currentUserId, isAdmin);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Admin: Delete any review
-     *
-     * @param reviewId Review ID
-     * @return No content response
-     */
     @DeleteMapping("/admin/reviews/{reviewId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> adminDeleteReview(@PathVariable Long reviewId) {
-        // TODO: Get current user ID from security context and check if admin
-        Integer currentUserId = 1; // For demonstration purposes
+        // Get currentUserId from JWT token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Jwt jwt = (Jwt) authentication.getPrincipal();
+
+        // Extract user_id from JWT token safely using Number.intValue()
+        Number userIdNumber = jwt.getClaim("user_id");
+        if (userIdNumber == null) {
+            throw new UnauthorizedException("User ID not found in token");
+        }
+
+        Integer currentUserId = userIdNumber.intValue();
+
         boolean isAdmin = true; // Admin role is required for this endpoint
 
         reviewService.deleteReview(reviewId, currentUserId, isAdmin);
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Check if the sort field is valid
-     *
-     * @param field The field to check
-     * @return true if valid, false otherwise
-     */
     private boolean isValidSortField(String field) {
         return field.equals("createdAt") ||
                 field.equals("rating");

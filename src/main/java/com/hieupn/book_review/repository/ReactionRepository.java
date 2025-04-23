@@ -11,10 +11,10 @@ import java.util.List;
 
 @Repository
 public interface ReactionRepository extends JpaRepository<Reaction, Long>, QuerydslPredicateExecutor<Reaction> {
-    // Tìm reaction của một người dùng đối với một đối tượng cụ thể
+    // Find a user's reaction for a specific item
     Optional<Reaction> findByUserIdAndReactableIdAndReactableType(Integer userId, Long reactableId, String reactableType);
 
-    // Đếm số lượng reactions theo loại cho một đối tượng cụ thể
+    // Count reactions by type for a specific reactable item
     @Query("SELECT r.reactionType, COUNT(r) FROM Reaction r WHERE r.reactableId = :reactableId AND r.reactableType = :reactableType GROUP BY r.reactionType")
     List<Object[]> countReactionsByTypeForReactable(Long reactableId, String reactableType);
 }
