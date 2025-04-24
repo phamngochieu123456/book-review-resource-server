@@ -52,6 +52,9 @@ public class BookGenre {
     @Column(name = "publication_year")
     private Integer publicationYear;
 
+    @Column(name = "publication_year_is_null", nullable = false)
+    private Boolean publicationYearIsNull;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;
 

@@ -44,7 +44,7 @@ public class BookService {
     private EntityManager entityManager;
 
     public Page<BookSummaryDTO> getAllBooks(Long genreId, Long authorId, String searchTerm, Pageable pageable) {
-        // Here the categoryId from the API is used to filter by genreId
+        // Genre filtering is handled by genreId parameter
         Page<Book> books = bookRepository.findAllNonDeletedBooks(genreId, authorId, searchTerm, pageable);
         return books.map(bookMapper::toBookSummaryDTO);
     }
@@ -101,13 +101,13 @@ public class BookService {
                         orderSpecifier = order.isAscending() ? qBook.title.asc() : qBook.title.desc();
                         break;
                     case "publicationYear":
+                        // First sort by the is_null indicator to ensure nulls come last
+                        orderSpecifiers.add(qBook.publicationYearIsNull.asc());
+                        // Then sort by the actual year field
                         orderSpecifier = order.isAscending() ? qBook.publicationYear.asc() : qBook.publicationYear.desc();
                         break;
                     case "averageRating":
                         orderSpecifier = order.isAscending() ? qBook.averageRating.asc() : qBook.averageRating.desc();
-                        break;
-                    case "createdAt":
-                        orderSpecifier = order.isAscending() ? qBook.createdAt.asc() : qBook.createdAt.desc();
                         break;
                     default:
                         // Default sort by average rating descending
@@ -177,7 +177,7 @@ public class BookService {
         book = bookRepository.save(book);
 
         // Associate genres with proper denormalized fields
-        associateGenresWithBook(book, createBookRequestDTO.getCategoryIds(), currentUserId);
+        associateGenresWithBook(book, createBookRequestDTO.getGenreIds(), currentUserId);
 
         // Associate authors
         associateAuthorsWithBook(book, createBookRequestDTO.getAuthorIds(), currentUserId);
@@ -238,11 +238,11 @@ public class BookService {
                         (oldPublicationYear == null && book.getPublicationYear() != null);
 
         // Update genres if provided
-        if (updateBookRequestDTO.getCategoryIds() != null) {
+        if (updateBookRequestDTO.getGenreIds() != null) {
             // Remove existing genres
             bookGenreRepository.deleteByBook(book);
             // Add new genres
-            associateGenresWithBook(book, updateBookRequestDTO.getCategoryIds(), currentUserId);
+            associateGenresWithBook(book, updateBookRequestDTO.getGenreIds(), currentUserId);
         } else if (denormalizedFieldsChanged) {
             // If denormalized fields changed but genres weren't updated, we need to update the denormalized fields
             updateBookGenreDenormalizedFields(book);

@@ -44,6 +44,9 @@ public class Book {
     @Column(name = "publication_year")
     private Integer publicationYear;
 
+    @Column(name = "publication_year_is_null", nullable = false)
+    private Boolean publicationYearIsNull;
+
     // Many-to-many relationship with Author through BookAuthor
     @OneToMany(mappedBy = "book")
     @ToString.Exclude

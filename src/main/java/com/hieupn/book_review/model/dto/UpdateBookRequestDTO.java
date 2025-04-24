@@ -34,5 +34,5 @@ public class UpdateBookRequestDTO {
 
     private List<Long> authorIds;
 
-    private List<Long> categoryIds;
+    private List<Long> genreIds;
 }

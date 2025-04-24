@@ -35,23 +35,23 @@ public class BookController {
     public ResponseEntity<PagedResponse<BookSummaryDTO>> getAllBooks(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "averageRating") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir,
-            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long genreId, // Changed from categoryId to genreId
             @RequestParam(required = false) String searchTerm,
             @RequestParam(required = false) Long authorId) {
 
         // Validate sortBy parameter
         if (!isValidSortField(sortBy)) {
-            sortBy = "createdAt";
+            sortBy = "averageRating";
         }
 
         // Create sort and pageable objects
         Sort sort = Sort.by(sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC, sortBy);
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        // Get books from service
-        Page<BookSummaryDTO> books = bookService.getAllBooks(categoryId, authorId, searchTerm, pageable);
+        // Get books from service - genreId is used for genre filtering
+        Page<BookSummaryDTO> books = bookService.getAllBooks(genreId, authorId, searchTerm, pageable);
 
         // Wrap the Page in our custom PagedResponse
         PagedResponse<BookSummaryDTO> response = new PagedResponse<>(books);
@@ -126,7 +126,6 @@ public class BookController {
     private boolean isValidSortField(String field) {
         return field.equals("title") ||
                 field.equals("averageRating") ||
-                field.equals("publicationYear") ||
-                field.equals("createdAt");
+                field.equals("publicationYear");
     }
 }

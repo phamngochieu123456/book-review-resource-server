@@ -36,6 +36,6 @@ public class CreateBookRequestDTO {
     @NotNull(message = "At least one author must be provided")
     private List<Long> authorIds;
 
-    @NotNull(message = "At least one category must be provided")
-    private List<Long> categoryIds;
+    @NotNull(message = "At least one genre must be provided")
+    private List<Long> genreIds;
 }
