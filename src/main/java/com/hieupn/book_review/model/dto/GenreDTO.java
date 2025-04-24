@@ -1,3 +1,4 @@
+// src/main/java/com/hieupn/book_review/model/dto/GenreDTO.java
 package com.hieupn.book_review.model.dto;
 
 import jakarta.validation.constraints.NotBlank;
@@ -21,6 +22,8 @@ public class GenreDTO {
     @NotBlank(message = "Genre name cannot be blank")
     @Size(max = 100, message = "Genre name cannot exceed 100 characters")
     private String name;
+
+    private String description;
 
     private LocalDateTime createdAt;
 

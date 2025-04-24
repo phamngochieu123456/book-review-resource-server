@@ -1,9 +1,10 @@
+// src/main/java/com/hieupn/book_review/mapper/BookMapper.java
 package com.hieupn.book_review.mapper;
 
 import com.hieupn.book_review.model.dto.*;
 import com.hieupn.book_review.model.entity.Book;
 import com.hieupn.book_review.model.entity.BookAuthor;
-import com.hieupn.book_review.model.entity.BookCategory;
+import com.hieupn.book_review.model.entity.BookGenre;
 import org.mapstruct.*;
 import org.mapstruct.factory.Mappers;
 
@@ -14,7 +15,7 @@ import java.util.stream.Collectors;
 /**
  * Mapper interface for converting between Book entity and BookDTO objects
  */
-@Mapper(componentModel = "spring", uses = {CategoryMapper.class})
+@Mapper(componentModel = "spring", uses = {GenreMapper.class})
 public interface BookMapper {
 
     BookMapper INSTANCE = Mappers.getMapper(BookMapper.class);
@@ -26,7 +27,7 @@ public interface BookMapper {
      * @return The corresponding BookDetailDTO
      */
     @Mapping(target = "authors", ignore = true)
-    @Mapping(target = "categories", ignore = true)
+    @Mapping(target = "genres", ignore = true)
     BookDetailDTO toBookDetailDTO(Book book);
 
     /**
@@ -36,7 +37,9 @@ public interface BookMapper {
      * @return The corresponding Book entity
      */
     @Mapping(target = "bookAuthors", ignore = true)
-    @Mapping(target = "bookCategories", ignore = true)
+    @Mapping(target = "bookGenres", ignore = true)
+    @Mapping(target = "reviews", ignore = true)
+    @Mapping(target = "comments", ignore = true)
     Book toBook(BookDetailDTO bookDetailDTO);
 
     /**
@@ -49,19 +52,21 @@ public interface BookMapper {
     BookSummaryDTO toBookSummaryDTO(Book book);
 
     /**
-     * After mapping from Book to BookDetailDTO, add categories
+     * After mapping from Book to BookDetailDTO, add genres
      *
      * @param book The source Book entity
      * @param bookDetailDTO The target BookDetailDTO
      */
     @AfterMapping
-    default void mapCategoriesForBookDetailDTO(Book book, @MappingTarget BookDetailDTO bookDetailDTO) {
-        Set<BookCategory> bookCategories = book.getBookCategories();
-        if (bookCategories != null && !bookCategories.isEmpty()) {
-            List<CategorySummaryDTO> categoryDTOs = bookCategories.stream()
-                    .map(bookCategory -> CategoryMapper.INSTANCE.toCategorySummaryDTO(bookCategory.getCategory()))
+    default void mapGenresForBookDetailDTO(Book book, @MappingTarget BookDetailDTO bookDetailDTO) {
+        Set<BookGenre> bookGenres = book.getBookGenres();
+        if (bookGenres != null && !bookGenres.isEmpty()) {
+            // No need to filter by bookGenre.isDeleted since it's a denormalized field from the book
+            // The book entity itself is already filtered by isDeleted=false
+            List<GenreDTO> genreDTOs = bookGenres.stream()
+                    .map(bookGenre -> GenreMapper.INSTANCE.toGenreDTO(bookGenre.getGenre()))
                     .collect(Collectors.toList());
-            bookDetailDTO.setCategories(categoryDTOs);
+            bookDetailDTO.setGenres(genreDTOs);
         }
     }
 

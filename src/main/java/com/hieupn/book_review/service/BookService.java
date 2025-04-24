@@ -23,6 +23,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -34,16 +35,17 @@ public class BookService {
 
     private final BookRepository bookRepository;
     private final AuthorRepository authorRepository;
-    private final CategoryRepository categoryRepository;
-    private final BookCategoryRepository bookCategoryRepository;
+    private final GenreRepository genreRepository;
+    private final BookGenreRepository bookGenreRepository;
     private final BookAuthorRepository bookAuthorRepository;
     private final BookMapper bookMapper;
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    public Page<BookSummaryDTO> getAllBooks(Long categoryId, Long authorId, String searchTerm, Pageable pageable) {
-        Page<Book> books = bookRepository.findAllNonDeletedBooks(categoryId, authorId, searchTerm, pageable);
+    public Page<BookSummaryDTO> getAllBooks(Long genreId, Long authorId, String searchTerm, Pageable pageable) {
+        // Here the categoryId from the API is used to filter by genreId
+        Page<Book> books = bookRepository.findAllNonDeletedBooks(genreId, authorId, searchTerm, pageable);
         return books.map(bookMapper::toBookSummaryDTO);
     }
 
@@ -108,8 +110,8 @@ public class BookService {
                         orderSpecifier = order.isAscending() ? qBook.createdAt.asc() : qBook.createdAt.desc();
                         break;
                     default:
-                        // Default sort by publication year descending
-                        orderSpecifier = qBook.publicationYear.desc().nullsLast();
+                        // Default sort by average rating descending
+                        orderSpecifier = qBook.averageRating.desc().nullsLast();
                 }
 
                 if (orderSpecifier != null) {
@@ -121,8 +123,8 @@ public class BookService {
                 query.orderBy(orderSpecifiers.toArray(new OrderSpecifier[0]));
             }
         } else {
-            // Default sort by publication year (newest first)
-            query.orderBy(qBook.publicationYear.desc().nullsLast());
+            // Default sort by average rating (highest first)
+            query.orderBy(qBook.averageRating.desc().nullsLast());
         }
 
         // Execute query
@@ -167,13 +169,15 @@ public class BookService {
                 .coverImageUrl(createBookRequestDTO.getCoverImageUrl())
                 .publicationYear(createBookRequestDTO.getPublicationYear())
                 .isDeleted(false)
+                .averageRating(new BigDecimal("0.00"))
+                .reviewCount(0)
                 .build();
 
         // Save book to get an ID
         book = bookRepository.save(book);
 
-        // Associate categories
-        associateCategoriesWithBook(book, createBookRequestDTO.getCategoryIds(), currentUserId);
+        // Associate genres with proper denormalized fields
+        associateGenresWithBook(book, createBookRequestDTO.getCategoryIds(), currentUserId);
 
         // Associate authors
         associateAuthorsWithBook(book, createBookRequestDTO.getAuthorIds(), currentUserId);
@@ -209,6 +213,11 @@ public class BookService {
             associateAuthorsWithBook(book, updateBookRequestDTO.getAuthorIds(), currentUserId);
         }
 
+        // Store old values for comparison
+        Boolean oldIsDeleted = book.getIsDeleted();
+        BigDecimal oldAverageRating = book.getAverageRating();
+        Integer oldPublicationYear = book.getPublicationYear();
+
         // Update basic book properties
         book.setTitle(updateBookRequestDTO.getTitle());
         book.setDescription(updateBookRequestDTO.getDescription());
@@ -219,12 +228,24 @@ public class BookService {
         // Save book changes
         book = bookRepository.save(book);
 
-        // Update categories if provided
+        // Check if denormalized fields have changed
+        boolean denormalizedFieldsChanged =
+                (oldIsDeleted != null && book.getIsDeleted() != null && !oldIsDeleted.equals(book.getIsDeleted())) ||
+                        (oldAverageRating != null && book.getAverageRating() != null && !oldAverageRating.equals(book.getAverageRating())) ||
+                        (oldPublicationYear != null && book.getPublicationYear() != null && !oldPublicationYear.equals(book.getPublicationYear())) ||
+                        (oldIsDeleted == null && book.getIsDeleted() != null) ||
+                        (oldAverageRating == null && book.getAverageRating() != null) ||
+                        (oldPublicationYear == null && book.getPublicationYear() != null);
+
+        // Update genres if provided
         if (updateBookRequestDTO.getCategoryIds() != null) {
-            // Remove existing categories
-            bookCategoryRepository.deleteByBook(book);
-            // Add new categories
-            associateCategoriesWithBook(book, updateBookRequestDTO.getCategoryIds(), currentUserId);
+            // Remove existing genres
+            bookGenreRepository.deleteByBook(book);
+            // Add new genres
+            associateGenresWithBook(book, updateBookRequestDTO.getCategoryIds(), currentUserId);
+        } else if (denormalizedFieldsChanged) {
+            // If denormalized fields changed but genres weren't updated, we need to update the denormalized fields
+            updateBookGenreDenormalizedFields(book);
         }
 
         // Refresh book from database to get all relationships loaded
@@ -239,21 +260,30 @@ public class BookService {
                 .orElseThrow(() -> new ResourceNotFoundException("Book", "id", id));
 
         book.setIsDeleted(true);
-        bookRepository.save(book);
+        Book savedBook = bookRepository.save(book);
+
+        // Update the denormalized isDeleted field in book_genres
+        updateBookGenreDenormalizedFields(savedBook);
     }
 
-    private void associateCategoriesWithBook(Book book, List<Long> categoryIds, Integer assignedBy) {
-        List<BookCategory> bookCategories = new ArrayList<>();
+    private void associateGenresWithBook(Book book, List<Long> genreIds, Integer assignedBy) {
+        List<BookGenre> bookGenres = new ArrayList<>();
 
-        for (Long categoryId : categoryIds) {
-            Category category = categoryRepository.findById(categoryId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Category", "id", categoryId));
+        for (Long genreId : genreIds) {
+            Genre genre = genreRepository.findById(genreId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Genre", "id", genreId));
 
-            BookCategory bookCategory = new BookCategory(assignedBy, book, category);
-            bookCategories.add(bookCategory);
+            BookGenre bookGenre = new BookGenre(1, assignedBy, book, genre);
+
+            // Set denormalized fields from book to BookGenre for query optimization
+            bookGenre.setIsDeleted(book.getIsDeleted());
+            bookGenre.setAverageRating(book.getAverageRating());
+            bookGenre.setPublicationYear(book.getPublicationYear());
+
+            bookGenres.add(bookGenre);
         }
 
-        bookCategoryRepository.saveAll(bookCategories);
+        bookGenreRepository.saveAll(bookGenres);
     }
 
     private void associateAuthorsWithBook(Book book, List<Long> authorIds, Integer assignedBy) {
@@ -272,5 +302,19 @@ public class BookService {
         }
 
         bookAuthorRepository.saveAll(bookAuthors);
+    }
+
+    /**
+     * Update denormalized fields in book_genres when book data changes
+     * This keeps the denormalized fields in sync with the source data for query optimization
+     */
+    private void updateBookGenreDenormalizedFields(Book book) {
+        List<BookGenre> bookGenres = bookGenreRepository.findByBook(book);
+        for (BookGenre bookGenre : bookGenres) {
+            bookGenre.setIsDeleted(book.getIsDeleted());
+            bookGenre.setAverageRating(book.getAverageRating());
+            bookGenre.setPublicationYear(book.getPublicationYear());
+        }
+        bookGenreRepository.saveAll(bookGenres);
     }
 }

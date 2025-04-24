@@ -63,9 +63,9 @@ public class BookCategory {
         // Set identifier values
         this.id = new BookCategoryId(book.getId(), category.getId());
 
-        // Ensure bidirectional integrity
-        book.addBookCategory(this);
-        category.addBookCategory(this);
+//        // Ensure bidirectional integrity
+//        book.addBookCategory(this);
+//        category.addBookCategory(this);
 
         // Note: createdAt and updatedAt are managed by DB default values
     }

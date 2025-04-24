@@ -1,3 +1,4 @@
+// src/main/java/com/hieupn/book_review/model/dto/BookDetailDTO.java
 package com.hieupn.book_review.model.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -37,8 +38,8 @@ public class BookDetailDTO {
     @JsonIgnoreProperties("books")
     private List<AuthorSummaryDTO> authors;
 
-    // Categories
-    private List<CategorySummaryDTO> categories;
+    // Genres (replaced categories)
+    private List<GenreDTO> genres;
 
     private LocalDateTime createdAt;
 

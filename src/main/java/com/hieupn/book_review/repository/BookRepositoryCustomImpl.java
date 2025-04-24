@@ -1,9 +1,10 @@
+// src/main/java/com/hieupn/book_review/repository/BookRepositoryCustomImpl.java
 package com.hieupn.book_review.repository;
 
 import com.hieupn.book_review.model.entity.Book;
 import com.hieupn.book_review.model.entity.BookCounts;
 import com.hieupn.book_review.model.entity.QBook;
-import com.hieupn.book_review.model.entity.QBookCategory;
+import com.hieupn.book_review.model.entity.QBookGenre;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.jpa.impl.JPAQuery;
@@ -30,28 +31,33 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
     private BookCountsRepository bookCountsRepository;
 
     @Override
-    public Page<Book> findAllNonDeletedBooks(Long categoryId, Long authorId, String searchTerm, Pageable pageable) {
+    public Page<Book> findAllNonDeletedBooks(Long genreId, Long authorId, String searchTerm, Pageable pageable) {
         JPAQueryFactory queryFactory = new JPAQueryFactory(entityManager);
         QBook qBook = QBook.book;
-        QBookCategory qBookCategory = QBookCategory.bookCategory;
+        QBookGenre qBookGenre = QBookGenre.bookGenre;
 
         // Build common where conditions
         BooleanBuilder whereClause = new BooleanBuilder();
-        whereClause.and(qBook.isDeleted.eq(false));
 
         // Apply filters to where clause if provided
         boolean hasFilters = false;
 
+        // Apply genre filter if provided
+        if (genreId != null) {
+            whereClause.and(qBookGenre.genre.id.eq(genreId));
+            // We don't need to check bookGenre.isDeleted here since it's a denormalized field
+            // Rather, we use the denormalized field for more efficient filtering
+            whereClause.and(qBookGenre.isDeleted.eq(false)); // Use the denormalized field
+            hasFilters = true;
+        }
+        else {
+            whereClause.and(qBook.isDeleted.eq(false)); // This is the book's isDeleted flag
+        }
+
         // Add title search condition using LIKE if searchTerm is provided
         if (StringUtils.hasText(searchTerm)) {
             // Use likeIgnoreCase for case-insensitive search, starts with searchTerm
-            whereClause.and(qBook.title.like(searchTerm + "%"));
-            hasFilters = true;
-        }
-
-        // Apply category filter if provided
-        if (categoryId != null) {
-            whereClause.and(qBookCategory.category.id.eq(categoryId));
+            whereClause.and(qBookGenre.title.like(searchTerm + "%"));
             hasFilters = true;
         }
 
@@ -65,27 +71,34 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
             if (bookCountOpt.isPresent()) {
                 total = bookCountOpt.get().getCurrentCount();
             } else {
-                JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookCategory, categoryId, whereClause);
+                JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookGenre, genreId, whereClause);
                 Long countResult = countQuery.fetchOne(); // fetchOne() returns null if no results
                 total = (countResult != null) ? countResult : 0L;
             }
         } else {
             // --- Count Query for filtered results: ---
-            JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookCategory, categoryId, whereClause);
+            JPAQuery<Long> countQuery = createCountQuery(queryFactory, qBook, qBookGenre, genreId, whereClause);
             total = countQuery.fetchCount();
         }
 
         // --- Data Query: ---
-        // Use fetch join to load associations
         JPAQuery<Book> query = queryFactory
                 .selectFrom(qBook)
-                .distinct()
-                // Fetch join for bookCategories
-                .leftJoin(qBookCategory).on(qBook.eq(qBookCategory.book)).fetchJoin()
-                .where(whereClause);
+                .distinct();
+
+        // Apply joins based on filters
+        if (genreId != null) {
+            // Join with bookGenre for genre filtering
+            query.join(qBookGenre).on(qBook.eq(qBookGenre.book)
+                    .and(qBookGenre.genre.id.eq(genreId))
+                    .and(qBookGenre.isDeleted.eq(false))); // Use the denormalized field
+        }
+
+        // Apply where clause
+        query.where(whereClause);
 
         // Apply sorting based on pageable
-        applySorting(query, qBook, pageable.getSort());
+        applySorting(query, qBook, qBookGenre, genreId, pageable.getSort());
 
         // Apply pagination
         query.offset(pageable.getOffset())
@@ -100,16 +113,17 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
      * Creates a count query with the appropriate joins and conditions
      */
     private JPAQuery<Long> createCountQuery(JPAQueryFactory queryFactory, QBook qBook,
-                                            QBookCategory qBookCategory,
-                                            Long categoryId, BooleanBuilder whereClause) {
+                                            QBookGenre qBookGenre,
+                                            Long genreId, BooleanBuilder whereClause) {
         // Create count query - no fetch join needed
         JPAQuery<Long> countQuery = queryFactory.select(qBook.id)
                 .from(qBook);
 
         // Apply joins for filters if needed
-        if (categoryId != null) {
-            countQuery.join(qBookCategory).on(qBook.eq(qBookCategory.book)
-                    .and(qBookCategory.category.id.eq(categoryId)));
+        if (genreId != null) {
+            countQuery.join(qBookGenre).on(qBook.eq(qBookGenre.book)
+                    .and(qBookGenre.genre.id.eq(genreId))
+                    .and(qBookGenre.isDeleted.eq(false))); // Use the denormalized field
         }
 
         // Apply where conditions
@@ -121,27 +135,58 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
 
     /**
      * Applies sorting based on Sort specification
+     * For performance reasons, when filtering by genre and sorting by rating or publication year,
+     * we use the denormalized fields in book_genres
      */
-    private void applySorting(JPAQuery<Book> query, QBook qBook, Sort sort) {
+    private void applySorting(JPAQuery<Book> query, QBook qBook, QBookGenre qBookGenre,
+                              Long genreId, Sort sort) {
         List<OrderSpecifier<?>> orderSpecifiers = new ArrayList<>();
 
         if (sort.isEmpty()) {
-            orderSpecifiers.add(qBook.createdAt.desc());
-            orderSpecifiers.add(qBook.id.asc());
+            // Default sort by average rating descending
+            if (genreId != null) {
+                // When filtering by genre, use denormalized field for better performance
+                orderSpecifiers.add(qBookGenre.averageRating.desc().nullsLast());
+            } else {
+                orderSpecifiers.add(qBook.averageRating.desc().nullsLast());
+            }
+            orderSpecifiers.add(qBook.id.asc()); // Secondary sort by ID
         } else {
             for (Sort.Order order : sort) {
                 String property = order.getProperty();
                 boolean isAscending = order.isAscending();
+
+                // Use denormalized fields when possible for better query performance
+                boolean useGenreTable = genreId != null &&
+                        (property.equals("averageRating") || property.equals("publicationYear"));
 
                 switch (property) {
                     case "title":
                         orderSpecifiers.add(isAscending ? qBook.title.asc() : qBook.title.desc());
                         break;
                     case "averageRating":
-                        orderSpecifiers.add(isAscending ? qBook.averageRating.asc() : qBook.averageRating.desc());
+                        if (useGenreTable) {
+                            // Use denormalized field in book_genres table
+                            orderSpecifiers.add(isAscending ?
+                                    qBookGenre.averageRating.asc().nullsLast() :
+                                    qBookGenre.averageRating.desc().nullsLast());
+                        } else {
+                            orderSpecifiers.add(isAscending ?
+                                    qBook.averageRating.asc().nullsLast() :
+                                    qBook.averageRating.desc().nullsLast());
+                        }
                         break;
                     case "publicationYear":
-                        orderSpecifiers.add(isAscending ? qBook.publicationYear.asc() : qBook.publicationYear.desc());
+                        if (useGenreTable) {
+                            // Use denormalized field in book_genres table
+                            orderSpecifiers.add(isAscending ?
+                                    qBookGenre.publicationYear.asc().nullsLast() :
+                                    qBookGenre.publicationYear.desc().nullsLast());
+                        } else {
+                            orderSpecifiers.add(isAscending ?
+                                    qBook.publicationYear.asc().nullsLast() :
+                                    qBook.publicationYear.desc().nullsLast());
+                        }
                         break;
                     case "createdAt":
                         orderSpecifiers.add(isAscending ? qBook.createdAt.asc() : qBook.createdAt.desc());
@@ -151,7 +196,9 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
                         break;
                 }
             }
-            orderSpecifiers.add(qBook.id.asc()); // Always add a sort by id
+
+            // Always add a sort by id for consistent ordering
+            orderSpecifiers.add(qBook.id.asc());
         }
 
         query.orderBy(orderSpecifiers.toArray(new OrderSpecifier[0]));

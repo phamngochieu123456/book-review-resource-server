@@ -1,3 +1,4 @@
+// src/main/java/com/hieupn/book_review/model/entity/Book.java
 package com.hieupn.book_review.model.entity;
 
 import jakarta.persistence.*;
@@ -77,11 +78,12 @@ public class Book {
     @EqualsAndHashCode.Exclude
     private Set<Comment> comments = new HashSet<>();
 
-    // Many-to-many relationship with Category through BookCategory
+    // Many-to-many relationship with Genre through BookGenre
     @OneToMany(mappedBy = "book")
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private Set<BookCategory> bookCategories = new HashSet<>();
+    @OrderBy("count DESC")
+    private Set<BookGenre> bookGenres = new HashSet<>();
 
     /**
      * Add a review to this book
@@ -102,18 +104,18 @@ public class Book {
     }
 
     /**
-     * Add a book-category relationship to this book
-     * @param bookCategory The book-category relationship to add
-     */
-    public void addBookCategory(BookCategory bookCategory) {
-        bookCategories.add(bookCategory);
-    }
-
-    /**
      * Add a book-author relationship to this book
      * @param bookAuthor The book-author relationship to add
      */
     public void addBookAuthor(BookAuthor bookAuthor) {
         bookAuthors.add(bookAuthor);
+    }
+
+    /**
+     * Add a book-genre relationship to this book
+     * @param bookGenre The book-genre relationship to add
+     */
+    public void addBookGenre(BookGenre bookGenre) {
+        bookGenres.add(bookGenre);
     }
 }

@@ -1,3 +1,4 @@
+// src/main/java/com/hieupn/book_review/mapper/GenreMapper.java
 package com.hieupn.book_review.mapper;
 
 import com.hieupn.book_review.model.dto.GenreDTO;
@@ -18,12 +19,20 @@ public interface GenreMapper {
 
     /**
      * Convert Genre entity to GenreDTO
-     * Map the description from the associated category
      *
      * @param genre The Genre entity
      * @return The corresponding GenreDTO
      */
     GenreDTO toGenreDTO(Genre genre);
+
+    /**
+     * Convert GenreDTO to Genre entity
+     *
+     * @param genreDTO The GenreDTO
+     * @return The corresponding Genre entity
+     */
+    @Mapping(target = "bookGenres", ignore = true)
+    Genre toGenre(GenreDTO genreDTO);
 
     /**
      * Convert a list of Genre entities to a list of GenreDTOs
