@@ -28,6 +28,8 @@ public class CommentService {
     private final CommentRepository commentRepository;
     private final BookRepository bookRepository;
     private final CommentMapper commentMapper;
+    private final UserService userService;
+    private final ReactionService reactionService;
 
     /**
      * Get top-level comments for a book with pagination
@@ -38,12 +40,19 @@ public class CommentService {
      */
     public Page<CommentDTO> getBookComments(Long bookId, Pageable pageable) {
         Page<Comment> comments = commentRepository.findByBookIdAndParentCommentIsNullAndIsDeletedFalse(bookId, pageable);
-        return comments.map(comment -> {
+        Page<CommentDTO> commentDTOs = comments.map(comment -> {
             CommentDTO dto = commentMapper.toCommentDTO(comment);
             // Add child comments
             dto.setReplies(getChildComments(comment.getId()));
+            // Add reaction summary
+            dto.setReactions(reactionService.getReactionSummary(comment.getId(), "comment"));
             return dto;
         });
+
+        // Populate usernames for all comments
+        populateUsernames(commentDTOs.getContent());
+
+        return commentDTOs;
     }
 
     /**
@@ -54,9 +63,19 @@ public class CommentService {
      */
     public List<CommentDTO> getChildComments(Long parentCommentId) {
         List<Comment> childComments = commentRepository.findByParentCommentIdAndIsDeletedFalse(parentCommentId);
-        return childComments.stream()
+        List<CommentDTO> childCommentDTOs = childComments.stream()
                 .map(commentMapper::toCommentDTO)
                 .collect(Collectors.toList());
+
+        // Populate usernames for child comments
+        populateUsernames(childCommentDTOs);
+
+        // Add reaction summaries for child comments
+        childCommentDTOs.forEach(dto ->
+                dto.setReactions(reactionService.getReactionSummary(dto.getId(), "comment"))
+        );
+
+        return childCommentDTOs;
     }
 
     /**
@@ -80,6 +99,12 @@ public class CommentService {
         if (comment.getParentComment() == null) {
             dto.setReplies(getChildComments(comment.getId()));
         }
+
+        // Add reaction summary
+        dto.setReactions(reactionService.getReactionSummary(comment.getId(), "comment"));
+
+        // Populate username
+        populateUsername(dto);
 
         return dto;
     }
@@ -120,7 +145,16 @@ public class CommentService {
         Comment comment = commentBuilder.build();
         Comment savedComment = commentRepository.save(comment);
 
-        return commentMapper.toCommentDTO(savedComment);
+        CommentDTO commentDTO = commentMapper.toCommentDTO(savedComment);
+
+        // Initialize empty collections
+        commentDTO.setReplies(List.of());
+        commentDTO.setReactions(reactionService.getReactionSummary(savedComment.getId(), "comment"));
+
+        // Set username for newly created comment
+        populateUsername(commentDTO);
+
+        return commentDTO;
     }
 
     /**
@@ -152,7 +186,15 @@ public class CommentService {
         comment.setContent(updateCommentDTO.getContent());
         Comment updatedComment = commentRepository.save(comment);
 
-        return commentMapper.toCommentDTO(updatedComment);
+        CommentDTO commentDTO = commentMapper.toCommentDTO(updatedComment);
+
+        // Add reaction summary
+        commentDTO.setReactions(reactionService.getReactionSummary(updatedComment.getId(), "comment"));
+
+        // Populate username
+        populateUsername(commentDTO);
+
+        return commentDTO;
     }
 
     /**
@@ -197,5 +239,36 @@ public class CommentService {
 
         // Delete the comment
         commentRepository.deleteById(commentId);
+    }
+
+    /**
+     * Helper method to populate username for a single CommentDTO
+     *
+     * @param commentDTO The CommentDTO to populate
+     */
+    private void populateUsername(CommentDTO commentDTO) {
+        if (commentDTO.getUserId() != null) {
+            String username = userService.getUsernameById(commentDTO.getUserId());
+            commentDTO.setUsername(username);
+        }
+    }
+
+    /**
+     * Helper method to populate usernames for a collection of CommentDTOs
+     *
+     * @param commentDTOs The collection of CommentDTOs to populate
+     */
+    private void populateUsernames(List<CommentDTO> commentDTOs) {
+        userService.populateUsernames(
+                commentDTOs,
+                CommentDTO::getUserId,
+                (dto, username) -> dto.setUsername(username)
+        );
+
+        // Also populate usernames for replies
+        commentDTOs.stream()
+                .filter(dto -> dto.getReplies() != null && !dto.getReplies().isEmpty())
+                .flatMap(dto -> dto.getReplies().stream())
+                .forEach(this::populateUsername);
     }
 }

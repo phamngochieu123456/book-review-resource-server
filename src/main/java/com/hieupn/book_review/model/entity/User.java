@@ -1,5 +1,7 @@
 package com.hieupn.book_review.model.entity;
 
+import com.hieupn.book_review.converter.StatusEnumConverter;
+import com.hieupn.book_review.model.enums.UserStatusType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -32,9 +34,6 @@ public class User {
     @Column(name = "email", nullable = false, unique = true)
     private String email;
 
-    @Column(name = "password", nullable = false)
-    private String password;
-
     @Column(name = "full_name")
     private String fullName;
 
@@ -44,8 +43,9 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
-    @Column(name = "status", nullable = false)
-    private String status; // ACTIVE, SUSPENDED, etc.
+    @Convert(converter = StatusEnumConverter.class)
+    @Column(name = "status", nullable = false, length = 50)
+    private UserStatusType status;
 
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -82,6 +82,6 @@ public class User {
      * @return true if user status is active, false otherwise
      */
     public boolean isActive() {
-        return "ACTIVE".equals(status);
+        return status.equals(UserStatusType.ACTIVE);
     }
 }
