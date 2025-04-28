@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -30,6 +31,7 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final BookRepository bookRepository;
     private final ReviewMapper reviewMapper;
+    private final UserService userService; // Add UserService as a dependency
 
     /**
      * Get all reviews for a book with pagination
@@ -40,7 +42,12 @@ public class ReviewService {
      */
     public Page<ReviewDTO> getBookReviews(Long bookId, Pageable pageable) {
         Page<Review> reviews = reviewRepository.findByBookId(bookId, pageable);
-        return reviews.map(reviewMapper::toReviewDTO);
+        Page<ReviewDTO> reviewDTOs = reviews.map(reviewMapper::toReviewDTO);
+
+        // Populate usernames for all reviews
+        populateUsernames(reviewDTOs.getContent());
+
+        return reviewDTOs;
     }
 
     /**
@@ -52,7 +59,12 @@ public class ReviewService {
      */
     public Page<ReviewDTO> getUserReviews(Integer userId, Pageable pageable) {
         Page<Review> reviews = reviewRepository.findByUserId(userId, pageable);
-        return reviews.map(reviewMapper::toReviewDTO);
+        Page<ReviewDTO> reviewDTOs = reviews.map(reviewMapper::toReviewDTO);
+
+        // Populate usernames
+        populateUsernames(reviewDTOs.getContent());
+
+        return reviewDTOs;
     }
 
     /**
@@ -65,7 +77,12 @@ public class ReviewService {
     public ReviewDTO getReviewById(Long reviewId) {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new ResourceNotFoundException("Review", "id", reviewId));
-        return reviewMapper.toReviewDTO(review);
+        ReviewDTO reviewDTO = reviewMapper.toReviewDTO(review);
+
+        // Populate username
+        populateUsername(reviewDTO);
+
+        return reviewDTO;
     }
 
     /**
@@ -77,7 +94,14 @@ public class ReviewService {
      */
     public ReviewDTO getUserReviewForBook(Integer userId, Long bookId) {
         Optional<Review> reviewOpt = reviewRepository.findByUserIdAndBookId(userId, bookId);
-        return reviewOpt.map(reviewMapper::toReviewDTO).orElse(null);
+        ReviewDTO reviewDTO = reviewOpt.map(reviewMapper::toReviewDTO).orElse(null);
+
+        // Populate username if review exists
+        if (reviewDTO != null) {
+            populateUsername(reviewDTO);
+        }
+
+        return reviewDTO;
     }
 
     /**
@@ -163,7 +187,12 @@ public class ReviewService {
         book.setReviewCount(newReviewCount);
         bookRepository.save(book);
 
-        return reviewMapper.toReviewDTO(savedReview);
+        ReviewDTO reviewDTO = reviewMapper.toReviewDTO(savedReview);
+
+        // Populate username
+        populateUsername(reviewDTO);
+
+        return reviewDTO;
     }
 
     /**
@@ -216,7 +245,12 @@ public class ReviewService {
         book.setAverageRating(newAverageRating.setScale(2, RoundingMode.HALF_UP));
         bookRepository.save(book);
 
-        return reviewMapper.toReviewDTO(updatedReview);
+        ReviewDTO reviewDTO = reviewMapper.toReviewDTO(updatedReview);
+
+        // Populate username
+        populateUsername(reviewDTO);
+
+        return reviewDTO;
     }
 
     /**
@@ -305,5 +339,30 @@ public class ReviewService {
         book.setAverageRating(averageRating);
         book.setReviewCount((int) reviewCount);
         bookRepository.save(book);
+    }
+
+    /**
+     * Helper method to populate username for a single ReviewDTO
+     *
+     * @param reviewDTO The ReviewDTO to populate
+     */
+    private void populateUsername(ReviewDTO reviewDTO) {
+        if (reviewDTO.getUserId() != null) {
+            String username = userService.getUsernameById(reviewDTO.getUserId());
+            reviewDTO.setUsername(username);
+        }
+    }
+
+    /**
+     * Helper method to populate usernames for a collection of ReviewDTOs
+     *
+     * @param reviewDTOs The collection of ReviewDTOs to populate
+     */
+    private void populateUsernames(List<ReviewDTO> reviewDTOs) {
+        userService.populateUsernames(
+                reviewDTOs,
+                ReviewDTO::getUserId,
+                (dto, username) -> dto.setUsername(username)
+        );
     }
 }
