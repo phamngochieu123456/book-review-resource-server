@@ -159,13 +159,13 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
         // When filtering by genre, count directly from book_genres table for better performance
         if (genreId != null) {
             return queryFactory
-                    .select(qBookGenre.book.id.countDistinct())
+                    .select(qBookGenre.book.id.count())
                     .from(qBookGenre)
                     .where(whereClause);
         } else {
             // For non-genre filtering, count from books table
             return queryFactory
-                    .select(qBook.id.countDistinct())
+                    .select(qBook.id.count())
                     .from(qBook)
                     .where(whereClause);
         }
@@ -219,9 +219,7 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
                 .from(qBook)
                 .join(qBookGenre).on(qBook.eq(qBookGenre.book)
                         .and(qBookGenre.genre.id.eq(genreId))
-                        .and(qBookGenre.isDeleted.eq(false)))
-                .where(whereClause)
-                .distinct();
+                        .and(qBookGenre.isDeleted.eq(false)));
 
         // Apply sorting to the tuple query
         applySortingToTupleQuery(tupleQuery, qBook, qBookGenre, sortFields);
@@ -249,8 +247,7 @@ public class BookRepositoryCustomImpl implements BookRepositoryCustom {
         // For queries without genre filtering, use simpler approach
         JPAQuery<Book> query = queryFactory
                 .selectFrom(qBook)
-                .where(whereClause)
-                .distinct();
+                .where(whereClause);
 
         // Apply sorting
         applyStandardSorting(query, qBook, pageable.getSort());
