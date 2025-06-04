@@ -28,6 +28,7 @@ public interface BookMapper {
      */
     @Mapping(target = "authors", ignore = true)
     @Mapping(target = "genres", ignore = true)
+    @Mapping(target = "publicationYear", source = "publicationYear", qualifiedByName = "mapPublicationYear")
     BookDetailDTO toBookDetailDTO(Book book);
 
     /**
@@ -40,6 +41,8 @@ public interface BookMapper {
     @Mapping(target = "bookGenres", ignore = true)
     @Mapping(target = "reviews", ignore = true)
     @Mapping(target = "comments", ignore = true)
+    @Mapping(target = "publicationYear", source = "publicationYear", qualifiedByName = "reverseMapPublicationYear")
+    @Mapping(target = "publicationYearIsNull", ignore = true) // Will be handled in @AfterMapping
     Book toBook(BookDetailDTO bookDetailDTO);
 
     /**
@@ -49,7 +52,44 @@ public interface BookMapper {
      * @return The corresponding BookSummaryDTO
      */
     @Mapping(target = "authors", ignore = true)
+    @Mapping(target = "publicationYear", source = "publicationYear", qualifiedByName = "mapPublicationYear")
     BookSummaryDTO toBookSummaryDTO(Book book);
+
+    /**
+     * Custom mapping method to convert publicationYear from entity to DTO.
+     * Converts 0 to null to represent "no publication year" in the frontend.
+     *
+     * @param publicationYear The publication year from entity
+     * @return null if year is 0, otherwise the original value
+     */
+    @Named("mapPublicationYear")
+    default Integer mapPublicationYear(Integer publicationYear) {
+        return (publicationYear != null && publicationYear == 0) ? null : publicationYear;
+    }
+
+    /**
+     * Custom mapping method to convert publicationYear from DTO to entity.
+     * Converts null to 0 to represent "no publication year" in the database.
+     *
+     * @param publicationYear The publication year from DTO
+     * @return 0 if year is null, otherwise the original value
+     */
+    @Named("reverseMapPublicationYear")
+    default Integer reverseMapPublicationYear(Integer publicationYear) {
+        return (publicationYear == null) ? 0 : publicationYear;
+    }
+
+    /**
+     * After mapping from BookDetailDTO to Book, set the publicationYearIsNull flag appropriately
+     *
+     * @param bookDetailDTO The source BookDetailDTO
+     * @param book The target Book entity
+     */
+    @AfterMapping
+    default void setPublicationYearIsNull(BookDetailDTO bookDetailDTO, @MappingTarget Book book) {
+        // Set the publicationYearIsNull flag based on whether publicationYear is null
+        book.setPublicationYearIsNull(book.getPublicationYear() == null);
+    }
 
     /**
      * After mapping from Book to BookDetailDTO, add genres
